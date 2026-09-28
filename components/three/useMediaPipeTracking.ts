@@ -6,6 +6,7 @@ import {
   type FaceLandmarkerResult,
   type HandLandmarkerResult,
 } from "@mediapipe/tasks-vision";
+import { isMobileDevice } from "@/components/three/useIsMobile";
 
 export type TrackingStatus =
   | "idle"
@@ -24,6 +25,14 @@ const HAND_MODEL_ASSET_PATH =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
 /**
+ * Su mobile il rilevamento (2 modelli ML) viene limitato a questa frequenza
+ * per non saturare CPU/GPU e lasciare margine al render loop di Three.js. Il
+ * rendering 3D resta comunque fluido interpolando l'ultimo risultato noto.
+ * Su desktop non viene applicato alcun throttling (comportamento invariato).
+ */
+const MOBILE_DETECTION_INTERVAL_MS = 1000 / 18;
+
+/**
  * Gestisce l'accesso alla webcam e il tracking di volto e mani con
  * MediaPipe (FaceLandmarker + HandLandmarker), condividendo lo stesso
  * permesso/stream video. Tutto il processing avviene lato client: nessun
@@ -40,6 +49,8 @@ export function useMediaPipeTracking() {
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastVideoTimeRef = useRef(-1);
+  const lastDetectionTimeRef = useRef(0);
+  const isMobileRef = useRef(false);
   const latestFaceResultRef = useRef<FaceLandmarkerResult | null>(null);
   const latestHandResultRef = useRef<HandLandmarkerResult | null>(null);
 
@@ -57,6 +68,7 @@ export function useMediaPipeTracking() {
     handLandmarkerRef.current?.close();
     handLandmarkerRef.current = null;
     lastVideoTimeRef.current = -1;
+    lastDetectionTimeRef.current = 0;
     latestFaceResultRef.current = null;
     latestHandResultRef.current = null;
   }, []);
@@ -67,6 +79,8 @@ export function useMediaPipeTracking() {
       setStatus("unsupported");
       return;
     }
+
+    isMobileRef.current = isMobileDevice();
 
     try {
       setStatus("loading-model");
@@ -111,15 +125,22 @@ export function useMediaPipeTracking() {
         const faceLandmarker = faceLandmarkerRef.current;
         const handLandmarker = handLandmarkerRef.current;
         const videoEl = videoRef.current;
+        const timestamp = performance.now();
+        const dueForMobileThrottle =
+          !isMobileRef.current ||
+          timestamp - lastDetectionTimeRef.current >=
+            MOBILE_DETECTION_INTERVAL_MS;
+
         if (
           faceLandmarker &&
           handLandmarker &&
           videoEl &&
           videoEl.readyState >= 2 &&
-          videoEl.currentTime !== lastVideoTimeRef.current
+          videoEl.currentTime !== lastVideoTimeRef.current &&
+          dueForMobileThrottle
         ) {
           lastVideoTimeRef.current = videoEl.currentTime;
-          const timestamp = performance.now();
+          lastDetectionTimeRef.current = timestamp;
 
           const faceResult = faceLandmarker.detectForVideo(
             videoEl,
