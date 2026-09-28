@@ -4,14 +4,13 @@ import { useFrame } from "@react-three/fiber";
 import { FaceLandmarker, type FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { getHue, HUE_SATURATION, HUE_LIGHTNESS } from "@/components/three/hueCycle";
 
 const PARTICLE_COUNT = 478;
-const SCALE = 11;
 
-/** Velocità del ciclo hue: 1 = un giro completo dell'arcobaleno ogni secondo. */
-const HUE_CYCLE_SPEED = 0.05;
-const HUE_SATURATION = 0.85;
-const HUE_LIGHTNESS = 0.5;
+/** Scala mondo condivisa con `HandMeshPoints`, cosi' volto e mani restano
+ * spazialmente coerenti (provengono dallo stesso frame camera). */
+export const SCALE = 11;
 
 /** Connessioni della mesh facciale (indici landmark), fornite da MediaPipe. */
 const TESSELATION = FaceLandmarker.FACE_LANDMARKS_TESSELATION;
@@ -153,7 +152,7 @@ export function FaceMeshPoints({ latestResultRef, faceDetected }: Props) {
     }
 
     // Punti e linee ciclano insieme, in sincronia, su tutta la ruota degli hue.
-    const hue = (time * HUE_CYCLE_SPEED) % 1;
+    const hue = getHue(time);
     pointsMaterialRef.current?.color.setHSL(
       hue,
       HUE_SATURATION,
